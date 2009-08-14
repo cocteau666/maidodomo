@@ -1,0 +1,19 @@
+
+  maidodomo ( a mailing list program for postfix )
+
+
+1. Summary
+very simple ML software
+
+2. Setup
+create directory "/usr/local/maido"
+change mode "777 /usr/local/maido"
+
+copy maido* script to "/usr/local/maido"
+change mode "755 maido*"
+
+3. Functions
+- create a mailing list
+- send mail to mailing list members
+- numbering mailing list count
+
