@@ -1,0 +1,97 @@
+#!/usr/bin/perl
+#===========================================================
+#
+#   maidodomo ( a mailing list program on postfix )
+#
+#-----------------------------------------------------------
+#
+#   Copyright 2009 Takeshi SAKURAI (takeshi.sakurai@hde.co.jp)
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+#===========================================================
+use strict;
+use Fcntl;
+use GDBM_File;
+
+my $path = "/usr/local/maido/";
+
+my $dbfile = $path . "maido.gdbm";
+my $sendmail = '/usr/sbin/sendmail';
+
+my $delim = "\t";
+
+my @mail;
+my $in_received_header = 0;
+my $received_header_checked = 0;
+my $original_to = '';
+my $debug = '';
+while(<STDIN>){
+  if ($received_header_checked == 0) {
+    if ($_ =~ /^Received:/i) {
+      $in_received_header = 1;
+      $received_header_checked = 1;
+    }
+  }
+  if ($in_received_header == 1 && $_ =~ /^\s/) {
+    my $tmp = $_;
+    $tmp =~ s/^\s+//;
+    if ($tmp =~ /^for/) {
+      my @tmps = split(/\s/, $tmp);
+      $original_to = $tmps[1];
+      $original_to =~ s/;$//;
+      $original_to =~ s/\>$//;
+      $original_to =~ s/^\<//;
+      $in_received_header = 0;
+    }
+  }
+
+  if ($_ =~ /^return-path:/i) {
+    push @mail, "Return-Path: <$original_to>\r\n";
+  } else {
+    push @mail, $_;
+  }
+}
+
+my ($local, $domain) = split(/\@/, $original_to);
+
+tie my %db, 'GDBM_File', "$dbfile", O_RDWR|O_CREAT, 0666 or die;
+my ($count, @emails) = split(/$delim/, $db{$local});
+$count = int($count) + 1;
+$db{$local} = $count . $delim . join($delim, @emails);
+untie %db;
+
+my $eml = '';
+my $in_eml_header = 1;
+foreach(@mail) {
+  if ($_ eq "\r\n") {
+    $in_eml_header = 0;
+  }
+  if ($in_eml_header == 1 && /^Subject:/i) {
+    my $tmp = $_;
+    $tmp =~ s/^Subject:/ /i;
+    $tmp =~ s/\[$local:.+\]\s//g;
+    $tmp =~ s/\[$local:.+\]//g;
+    $tmp =~ s/\s//;
+    $eml .= "Subject: [" . $local . ":" . sprintf("%05d", $count) . "]\r\n" . $tmp;
+  } else {
+    $eml .= $_;
+  }
+}
+
+if (open(*MAIL, "|$sendmail " . join(" ", @emails))) {
+  print MAIL $eml;
+  close(MAIL);
+}
+
+exit 0;
